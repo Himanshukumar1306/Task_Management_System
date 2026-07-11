@@ -1,0 +1,2320 @@
+=== PROJECT SOURCE EXPORT ===
+
+=========================================
+FILE PATH: README.md
+=========================================
+
+# Task_Management_System
+MpOnline Internship
+
+
+=========================================
+FILE PATH: backend/.env
+=========================================
+
+DATABASE_URL=mysql+pymysql://tms_user:tms_password@localhost:3306/tms_db
+SECRET_KEY=918f8e02587f7b2a6f2c0b7a8a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+
+=========================================
+FILE PATH: backend/Dockerfile
+=========================================
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies (needed for some python packages or mysql clients if needed)
+RUN apt-get update && apt-get install -y default-libmysqlclient-dev pkg-config gcc && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Run uvicorn on container startup
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+
+=========================================
+FILE PATH: backend/alembic.ini
+=========================================
+
+[alembic]
+script_location = alembic
+prepend_sys_path = .
+version_path_separator = os
+
+[loggers]
+keys = root,sqlalchemy,alembic
+
+[handlers]
+keys = console
+
+[formatters]
+keys = generic
+
+[logger_root]
+level = WARN
+handlers = console
+qualname =
+
+[logger_sqlalchemy]
+level = WARN
+handlers =
+qualname = sqlalchemy.engine
+
+[logger_alembic]
+level = INFO
+handlers =
+qualname = alembic
+
+[handler_console]
+class = StreamHandler
+args = (sys.stderr,)
+level = NOTSET
+formatter = generic
+
+[formatter_generic]
+format = %(levelname)-5.5s [%(name)s] %(message)s
+datefmt = %H:%M:%S
+
+
+=========================================
+FILE PATH: backend/alembic/env.py
+=========================================
+
+from logging.config import fileConfig
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
+from alembic import context
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from app.database import Base
+from app.models import User, Employee, Task
+from app.config import settings
+
+config = context.config
+
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+target_metadata = Base.metadata
+
+def get_url():
+    return settings.DATABASE_URL
+
+def run_migrations_offline() -> None:
+    url = get_url()
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+def run_migrations_online() -> None:
+    configuration = config.get_section(config.config_ini_section)
+    configuration["sqlalchemy.url"] = get_url()
+    connectable = engine_from_config(
+        configuration,
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection, target_metadata=target_metadata
+        )
+
+        with context.begin_transaction():
+            context.run_migrations()
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
+
+
+=========================================
+FILE PATH: backend/app/config.py
+=========================================
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    PROJECT_NAME: str = "Task Management System API"
+    DATABASE_URL: str
+    SECRET_KEY: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+settings = Settings()
+
+
+=========================================
+FILE PATH: backend/app/core/__init__.py
+=========================================
+
+from .security import verify_password, get_password_hash, create_access_token
+from .dependencies import get_current_user, get_current_active_employee, get_current_active_manager, get_current_active_admin
+from .exceptions import NotFoundException, BadRequestException, ForbiddenException
+
+
+=========================================
+FILE PATH: backend/app/core/dependencies.py
+=========================================
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models.user import User, RoleEnum
+from app.repositories.user_repo import user_repo
+from app.core.security import ALGORITHM
+from app.config import settings
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+        
+    user = user_repo.get_by_username(db, username=username)
+    if user is None:
+        raise credentials_exception
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return user
+
+def get_current_active_employee(current_user: User = Depends(get_current_user)) -> User:
+    return current_user
+
+def get_current_active_manager(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role not in [RoleEnum.manager, RoleEnum.admin]:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return current_user
+
+def get_current_active_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != RoleEnum.admin:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return current_user
+
+
+=========================================
+FILE PATH: backend/app/core/exceptions.py
+=========================================
+
+from fastapi import HTTPException, status
+
+class NotFoundException(HTTPException):
+    def __init__(self, detail: str = "Resource not found"):
+        super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+
+class BadRequestException(HTTPException):
+    def __init__(self, detail: str = "Bad request"):
+        super().__init__(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+class ForbiddenException(HTTPException):
+    def __init__(self, detail: str = "Not enough permissions"):
+        super().__init__(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
+
+=========================================
+FILE PATH: backend/app/core/security.py
+=========================================
+
+from datetime import datetime, timedelta, timezone
+from jose import jwt
+from passlib.context import CryptContext
+from app.config import settings
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+ALGORITHM = "HS256"
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+=========================================
+FILE PATH: backend/app/database.py
+=========================================
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+from .config import settings
+
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+=========================================
+FILE PATH: backend/app/main.py
+=========================================
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.routers import auth_router, employee_router, task_router, dashboard_router
+from app.config import settings
+from app.database import engine, Base
+
+# Create tables if they don't exist (useful for quick start, though alembic is better)
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title=settings.PROJECT_NAME)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, restrict this
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth_router)
+app.include_router(employee_router)
+app.include_router(task_router)
+app.include_router(dashboard_router)
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
+=========================================
+FILE PATH: backend/app/models/__init__.py
+=========================================
+
+from .user import User
+from .employee import Employee
+from .task import Task
+
+
+=========================================
+FILE PATH: backend/app/models/employee.py
+=========================================
+
+from sqlalchemy import Column, Integer, String, Boolean, Date, ForeignKey
+from app.database import Base
+
+class Employee(Base):
+    __tablename__ = "employees"
+
+    employee_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE", onupdate="CASCADE"), unique=True, nullable=False)
+    full_name = Column(String(100), nullable=False)
+    department = Column(String(50))
+    designation = Column(String(50))
+    phone = Column(String(15))
+    date_joined = Column(Date)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+=========================================
+FILE PATH: backend/app/models/task.py
+=========================================
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Enum, Text, ForeignKey
+from sqlalchemy.sql import func
+from app.database import Base
+import enum
+
+class PriorityEnum(str, enum.Enum):
+    Low = "Low"
+    Medium = "Medium"
+    High = "High"
+
+class StatusEnum(str, enum.Enum):
+    Pending = "Pending"
+    In_Progress = "In Progress"
+    Completed = "Completed"
+    Overdue = "Overdue"
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    task_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    title = Column(String(150), nullable=False)
+    description = Column(Text)
+    assigned_to = Column(Integer, ForeignKey("employees.employee_id", ondelete="CASCADE", onupdate="CASCADE"), nullable=False, index=True)
+    assigned_by = Column(Integer, ForeignKey("users.user_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False)
+    priority = Column(Enum(PriorityEnum), default=PriorityEnum.Medium)
+    status = Column(Enum(StatusEnum), default=StatusEnum.Pending, index=True)
+    completed = Column(Boolean, default=False, nullable=False)
+    due_date = Column(Date, index=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+=========================================
+FILE PATH: backend/app/models/user.py
+=========================================
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum
+from sqlalchemy.sql import func
+from app.database import Base
+import enum
+
+class RoleEnum(str, enum.Enum):
+    admin = "admin"
+    manager = "manager"
+    employee = "employee"
+
+class User(Base):
+    __tablename__ = "users"
+
+    user_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(100), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(Enum(RoleEnum), default=RoleEnum.employee, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+=========================================
+FILE PATH: backend/app/repositories/__init__.py
+=========================================
+
+from .user_repo import user_repo
+from .employee_repo import employee_repo
+from .task_repo import task_repo
+
+
+=========================================
+FILE PATH: backend/app/repositories/employee_repo.py
+=========================================
+
+from sqlalchemy.orm import Session
+from app.models.employee import Employee
+from app.schemas.employee_schema import EmployeeUpdate
+
+class EmployeeRepository:
+    def get_by_id(self, db: Session, employee_id: int) -> Employee | None:
+        return db.query(Employee).filter(Employee.employee_id == employee_id).first()
+
+    def get_by_user_id(self, db: Session, user_id: int) -> Employee | None:
+        return db.query(Employee).filter(Employee.user_id == user_id).first()
+
+    def get_all(self, db: Session, skip: int = 0, limit: int = 100) -> list[Employee]:
+        return db.query(Employee).offset(skip).limit(limit).all()
+
+    def create(self, db: Session, user_id: int, full_name: str, department: str = None, designation: str = None, phone: str = None) -> Employee:
+        db_employee = Employee(
+            user_id=user_id,
+            full_name=full_name,
+            department=department,
+            designation=designation,
+            phone=phone,
+            date_joined=None 
+        )
+        db.add(db_employee)
+        db.commit()
+        db.refresh(db_employee)
+        return db_employee
+
+    def update(self, db: Session, db_employee: Employee, update_data: EmployeeUpdate) -> Employee:
+        update_dict = update_data.model_dump(exclude_unset=True)
+        for key, value in update_dict.items():
+            setattr(db_employee, key, value)
+        db.commit()
+        db.refresh(db_employee)
+        return db_employee
+
+    def delete(self, db: Session, db_employee: Employee) -> Employee:
+        db_employee.is_active = False
+        db.commit()
+        db.refresh(db_employee)
+        return db_employee
+
+employee_repo = EmployeeRepository()
+
+
+=========================================
+FILE PATH: backend/app/repositories/task_repo.py
+=========================================
+
+from sqlalchemy.orm import Session
+from app.models.task import Task, StatusEnum
+from app.schemas.task_schema import TaskCreate, TaskUpdate
+
+class TaskRepository:
+    def get_by_id(self, db: Session, task_id: int) -> Task | None:
+        return db.query(Task).filter(Task.task_id == task_id).first()
+
+    def get_all(self, db: Session, skip: int = 0, limit: int = 100, assigned_to: int = None, status: StatusEnum = None) -> list[Task]:
+        query = db.query(Task)
+        if assigned_to:
+            query = query.filter(Task.assigned_to == assigned_to)
+        if status:
+            query = query.filter(Task.status == status)
+        return query.offset(skip).limit(limit).all()
+
+    def create(self, db: Session, task_in: TaskCreate, assigned_by: int) -> Task:
+        db_task = Task(
+            title=task_in.title,
+            description=task_in.description,
+            assigned_to=task_in.assigned_to,
+            assigned_by=assigned_by,
+            priority=task_in.priority,
+            due_date=task_in.due_date
+        )
+        db.add(db_task)
+        db.commit()
+        db.refresh(db_task)
+        return db_task
+
+    def update(self, db: Session, db_task: Task, update_data: TaskUpdate) -> Task:
+        update_dict = update_data.model_dump(exclude_unset=True)
+        for key, value in update_dict.items():
+            setattr(db_task, key, value)
+        db.commit()
+        db.refresh(db_task)
+        return db_task
+        
+    def update_status(self, db: Session, db_task: Task, status: StatusEnum, completed: bool) -> Task:
+        db_task.status = status
+        db_task.completed = completed
+        db.commit()
+        db.refresh(db_task)
+        return db_task
+
+    def delete(self, db: Session, db_task: Task) -> None:
+        db.delete(db_task)
+        db.commit()
+
+task_repo = TaskRepository()
+
+
+=========================================
+FILE PATH: backend/app/repositories/user_repo.py
+=========================================
+
+from sqlalchemy.orm import Session
+from app.models.user import User
+from app.schemas.user_schema import UserCreate
+from app.core.security import get_password_hash
+
+class UserRepository:
+    def get_by_username(self, db: Session, username: str) -> User | None:
+        return db.query(User).filter(User.username == username).first()
+
+    def get_by_email(self, db: Session, email: str) -> User | None:
+        return db.query(User).filter(User.email == email).first()
+
+    def get_by_id(self, db: Session, user_id: int) -> User | None:
+        return db.query(User).filter(User.user_id == user_id).first()
+
+    def create(self, db: Session, user_in: UserCreate) -> User:
+        db_user = User(
+            username=user_in.username,
+            email=user_in.email,
+            password_hash=get_password_hash(user_in.password),
+            role=user_in.role
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+
+user_repo = UserRepository()
+
+
+=========================================
+FILE PATH: backend/app/routers/__init__.py
+=========================================
+
+from .auth_router import router as auth_router
+from .employee_router import router as employee_router
+from .task_router import router as task_router
+from .dashboard_router import router as dashboard_router
+
+
+=========================================
+FILE PATH: backend/app/routers/auth_router.py
+=========================================
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.schemas.user_schema import UserLogin, Token, UserOut
+from app.services.auth_service import auth_service
+from app.core.dependencies import get_current_user
+
+router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+
+@router.post("/login", response_model=Token)
+def login(login_data: UserLogin, db: Session = Depends(get_db)):
+    return auth_service.login(db, login_data)
+
+@router.get("/me", response_model=UserOut)
+def get_me(current_user = Depends(get_current_user)):
+    return current_user
+
+
+=========================================
+FILE PATH: backend/app/routers/dashboard_router.py
+=========================================
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from app.database import get_db
+from app.models.task import Task, StatusEnum
+from app.core.dependencies import get_current_active_manager
+
+router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
+
+@router.get("/summary")
+def get_dashboard_summary(db: Session = Depends(get_db), current_user = Depends(get_current_active_manager)):
+    total_tasks = db.query(func.count(Task.task_id)).scalar()
+    completed = db.query(func.count(Task.task_id)).filter(Task.status == StatusEnum.Completed).scalar()
+    pending = db.query(func.count(Task.task_id)).filter(Task.status == StatusEnum.Pending).scalar()
+    in_progress = db.query(func.count(Task.task_id)).filter(Task.status == StatusEnum.In_Progress).scalar()
+    overdue = db.query(func.count(Task.task_id)).filter(Task.status == StatusEnum.Overdue).scalar()
+
+    return {
+        "total_tasks": total_tasks,
+        "completed": completed,
+        "pending": pending,
+        "in_progress": in_progress,
+        "overdue": overdue
+    }
+
+
+=========================================
+FILE PATH: backend/app/routers/employee_router.py
+=========================================
+
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.schemas.employee_schema import EmployeeCreate, EmployeeUpdate, EmployeeOut
+from app.services.employee_service import employee_service
+from app.core.dependencies import get_current_active_manager, get_current_active_admin
+
+router = APIRouter(prefix="/api/v1/employees", tags=["employees"])
+
+@router.post("", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)
+def create_employee(employee_in: EmployeeCreate, db: Session = Depends(get_db), current_user = Depends(get_current_active_admin)):
+    return employee_service.create_employee(db, employee_in)
+
+@router.get("", response_model=list[EmployeeOut])
+def get_employees(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user = Depends(get_current_active_manager)):
+    return employee_service.get_employees(db, skip, limit)
+
+@router.get("/{employee_id}", response_model=EmployeeOut)
+def get_employee(employee_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_active_manager)):
+    return employee_service.get_employee(db, employee_id)
+
+@router.put("/{employee_id}", response_model=EmployeeOut)
+def update_employee(employee_id: int, employee_in: EmployeeUpdate, db: Session = Depends(get_db), current_user = Depends(get_current_active_admin)):
+    return employee_service.update_employee(db, employee_id, employee_in)
+
+@router.delete("/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
+def deactivate_employee(employee_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_active_admin)):
+    employee_service.deactivate_employee(db, employee_id)
+
+
+=========================================
+FILE PATH: backend/app/routers/task_router.py
+=========================================
+
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.schemas.task_schema import TaskCreate, TaskUpdate, TaskOut, TaskStatusUpdate
+from app.models.task import StatusEnum
+from app.services.task_service import task_service
+from app.core.dependencies import get_current_user, get_current_active_manager
+
+router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
+
+@router.post("", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
+def create_task(task_in: TaskCreate, db: Session = Depends(get_db), current_user = Depends(get_current_active_manager)):
+    return task_service.create_task(db, task_in, current_user.user_id)
+
+@router.get("", response_model=list[TaskOut])
+def get_tasks(skip: int = 0, limit: int = 100, status: StatusEnum = None, assigned_to: int = None, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    return task_service.get_tasks(db, current_user, skip, limit, status, assigned_to)
+
+@router.get("/{task_id}", response_model=TaskOut)
+def get_task(task_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    return task_service.get_task(db, task_id, current_user)
+
+@router.put("/{task_id}", response_model=TaskOut)
+def update_task(task_id: int, task_in: TaskUpdate, db: Session = Depends(get_db), current_user = Depends(get_current_active_manager)):
+    return task_service.update_task(db, task_id, task_in)
+
+@router.patch("/{task_id}/status", response_model=TaskOut)
+def update_task_status(task_id: int, status_update: TaskStatusUpdate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    return task_service.update_task_status(db, task_id, status_update, current_user)
+
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(task_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_active_manager)):
+    task_service.delete_task(db, task_id)
+
+
+=========================================
+FILE PATH: backend/app/schemas/__init__.py
+=========================================
+
+from .user_schema import UserBase, UserCreate, UserLogin, UserOut, Token
+from .employee_schema import EmployeeBase, EmployeeCreate, EmployeeUpdate, EmployeeOut
+from .task_schema import TaskBase, TaskCreate, TaskUpdate, TaskStatusUpdate, TaskOut
+
+
+=========================================
+FILE PATH: backend/app/schemas/employee_schema.py
+=========================================
+
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from datetime import date
+
+class EmployeeBase(BaseModel):
+    full_name: str
+    department: Optional[str] = None
+    designation: Optional[str] = None
+    phone: Optional[str] = None
+    date_joined: Optional[date] = None
+
+class EmployeeCreate(EmployeeBase):
+    email: EmailStr
+    username: str
+    password: str
+
+class EmployeeUpdate(EmployeeBase):
+    pass
+
+class EmployeeOut(EmployeeBase):
+    employee_id: int
+    user_id: int
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+=========================================
+FILE PATH: backend/app/schemas/task_schema.py
+=========================================
+
+from pydantic import BaseModel
+from typing import Optional
+from datetime import date, datetime
+from app.models.task import PriorityEnum, StatusEnum
+
+class TaskBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    assigned_to: int
+    priority: PriorityEnum = PriorityEnum.Medium
+    due_date: Optional[date] = None
+
+class TaskCreate(TaskBase):
+    pass
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    assigned_to: Optional[int] = None
+    priority: Optional[PriorityEnum] = None
+    due_date: Optional[date] = None
+
+class TaskStatusUpdate(BaseModel):
+    status: StatusEnum
+    completed: bool
+
+class TaskOut(TaskBase):
+    task_id: int
+    assigned_by: int
+    status: StatusEnum
+    completed: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+=========================================
+FILE PATH: backend/app/schemas/user_schema.py
+=========================================
+
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from datetime import datetime
+from app.models.user import RoleEnum
+
+class UserBase(BaseModel):
+    username: str
+    email: EmailStr
+    role: RoleEnum = RoleEnum.employee
+
+class UserCreate(UserBase):
+    password: str
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class UserOut(UserBase):
+    user_id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    role: RoleEnum
+    user_id: int
+
+
+=========================================
+FILE PATH: backend/app/services/__init__.py
+=========================================
+
+from .auth_service import auth_service
+from .employee_service import employee_service
+from .task_service import task_service
+
+
+=========================================
+FILE PATH: backend/app/services/auth_service.py
+=========================================
+
+from sqlalchemy.orm import Session
+from app.repositories.user_repo import user_repo
+from app.schemas.user_schema import UserLogin, Token, UserCreate, UserOut
+from app.core.security import verify_password, create_access_token
+from app.core.exceptions import BadRequestException, NotFoundException
+
+class AuthService:
+    def login(self, db: Session, login_data: UserLogin) -> Token:
+        user = user_repo.get_by_username(db, login_data.username)
+        if not user or not verify_password(login_data.password, user.password_hash):
+            raise BadRequestException(detail="Incorrect username or password")
+        
+        if not user.is_active:
+            raise BadRequestException(detail="Inactive user")
+
+        access_token = create_access_token(data={"sub": user.username})
+        
+        return Token(
+            access_token=access_token,
+            token_type="bearer",
+            role=user.role,
+            user_id=user.user_id
+        )
+
+auth_service = AuthService()
+
+
+=========================================
+FILE PATH: backend/app/services/employee_service.py
+=========================================
+
+from sqlalchemy.orm import Session
+from app.repositories.employee_repo import employee_repo
+from app.repositories.user_repo import user_repo
+from app.schemas.employee_schema import EmployeeCreate, EmployeeUpdate, EmployeeOut
+from app.schemas.user_schema import UserCreate
+from app.models.user import RoleEnum
+from app.core.exceptions import BadRequestException, NotFoundException
+import logging
+
+logger = logging.getLogger(__name__)
+
+class EmployeeService:
+    def create_employee(self, db: Session, employee_in: EmployeeCreate) -> EmployeeOut:
+        # Check if username or email exists
+        if user_repo.get_by_username(db, employee_in.username):
+            raise BadRequestException(detail="Username already registered")
+        if user_repo.get_by_email(db, employee_in.email):
+            raise BadRequestException(detail="Email already registered")
+
+        # 1. Create User
+        user_create = UserCreate(
+            username=employee_in.username,
+            email=employee_in.email,
+            password=employee_in.password,
+            role=RoleEnum.employee
+        )
+        user = user_repo.create(db, user_create)
+
+        # 2. Create Employee
+        employee = employee_repo.create(
+            db=db,
+            user_id=user.user_id,
+            full_name=employee_in.full_name,
+            department=employee_in.department,
+            designation=employee_in.designation,
+            phone=employee_in.phone
+        )
+        return employee
+
+    def get_employees(self, db: Session, skip: int = 0, limit: int = 100) -> list[EmployeeOut]:
+        return employee_repo.get_all(db, skip=skip, limit=limit)
+
+    def get_employee(self, db: Session, employee_id: int) -> EmployeeOut:
+        employee = employee_repo.get_by_id(db, employee_id)
+        if not employee:
+            raise NotFoundException(detail="Employee not found")
+        return employee
+
+    def update_employee(self, db: Session, employee_id: int, employee_in: EmployeeUpdate) -> EmployeeOut:
+        employee = employee_repo.get_by_id(db, employee_id)
+        if not employee:
+            raise NotFoundException(detail="Employee not found")
+        return employee_repo.update(db, employee, employee_in)
+
+    def deactivate_employee(self, db: Session, employee_id: int):
+        employee = employee_repo.get_by_id(db, employee_id)
+        if not employee:
+            raise NotFoundException(detail="Employee not found")
+        employee_repo.delete(db, employee)
+
+employee_service = EmployeeService()
+
+
+=========================================
+FILE PATH: backend/app/services/task_service.py
+=========================================
+
+from sqlalchemy.orm import Session
+from app.repositories.task_repo import task_repo
+from app.schemas.task_schema import TaskCreate, TaskUpdate, TaskOut, TaskStatusUpdate
+from app.models.task import StatusEnum
+from app.core.exceptions import NotFoundException, ForbiddenException
+from app.models.user import RoleEnum
+
+class TaskService:
+    def create_task(self, db: Session, task_in: TaskCreate, assigned_by_user_id: int) -> TaskOut:
+        return task_repo.create(db, task_in=task_in, assigned_by=assigned_by_user_id)
+
+    def get_tasks(self, db: Session, current_user, skip: int = 0, limit: int = 100, status: StatusEnum = None, assigned_to: int = None) -> list[TaskOut]:
+        if current_user.role == RoleEnum.employee:
+            # Employees can only see their own tasks
+            # Assuming current_user has employee relation, let's fetch it
+            from app.repositories.employee_repo import employee_repo
+            employee = employee_repo.get_by_user_id(db, current_user.user_id)
+            if not employee:
+                return []
+            assigned_to = employee.employee_id
+            
+        return task_repo.get_all(db, skip=skip, limit=limit, status=status, assigned_to=assigned_to)
+
+    def get_task(self, db: Session, task_id: int, current_user) -> TaskOut:
+        task = task_repo.get_by_id(db, task_id)
+        if not task:
+            raise NotFoundException(detail="Task not found")
+
+        if current_user.role == RoleEnum.employee:
+            from app.repositories.employee_repo import employee_repo
+            employee = employee_repo.get_by_user_id(db, current_user.user_id)
+            if not employee or task.assigned_to != employee.employee_id:
+                raise ForbiddenException(detail="Not authorized to access this task")
+
+        return task
+
+    def update_task(self, db: Session, task_id: int, task_in: TaskUpdate) -> TaskOut:
+        task = task_repo.get_by_id(db, task_id)
+        if not task:
+            raise NotFoundException(detail="Task not found")
+        return task_repo.update(db, task, task_in)
+
+    def update_task_status(self, db: Session, task_id: int, status_update: TaskStatusUpdate, current_user) -> TaskOut:
+        task = task_repo.get_by_id(db, task_id)
+        if not task:
+            raise NotFoundException(detail="Task not found")
+            
+        if current_user.role == RoleEnum.employee:
+            from app.repositories.employee_repo import employee_repo
+            employee = employee_repo.get_by_user_id(db, current_user.user_id)
+            if not employee or task.assigned_to != employee.employee_id:
+                raise ForbiddenException(detail="Not authorized to modify this task")
+
+        return task_repo.update_status(db, task, status=status_update.status, completed=status_update.completed)
+
+    def delete_task(self, db: Session, task_id: int):
+        task = task_repo.get_by_id(db, task_id)
+        if not task:
+            raise NotFoundException(detail="Task not found")
+        task_repo.delete(db, task)
+
+task_service = TaskService()
+
+
+=========================================
+FILE PATH: backend/app/utils/__init__.py
+=========================================
+
+from .logger import get_logger
+
+
+=========================================
+FILE PATH: backend/app/utils/logger.py
+=========================================
+
+import logging
+import sys
+
+def get_logger(name: str):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        
+    return logger
+
+
+=========================================
+FILE PATH: backend/requirements.txt
+=========================================
+
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+sqlalchemy==2.0.30
+pymysql==1.1.0
+alembic==1.13.0
+pydantic-settings==2.3.0
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+pytest==8.2.0
+python-dotenv==1.0.1
+
+
+=========================================
+FILE PATH: docker-compose.yml
+=========================================
+
+version: '4.81'
+
+services:
+  backend:
+    build: ./backend
+    container_name: tms_backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=mysql+pymysql://tms_user:tms_password@mysql:3306/tms_db
+    restart: always
+
+  mysql:
+    image: mysql:8.0
+    container_name: tms_mysql
+    environment:
+      MYSQL_DATABASE: tms_db
+      MYSQL_USER: tms_user
+      MYSQL_PASSWORD: tms_password
+      MYSQL_ROOT_PASSWORD: tms_root_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  frontend:
+    image: nginx:alpine
+    container_name: tms_frontend
+    ports:
+      - "8080:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+    restart: always
+
+volumes:
+  mysql_data:
+
+
+=========================================
+FILE PATH: frontend/css/animations.css
+=========================================
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+    from { opacity: 0; transform: translateX(100%); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.slide-up {
+    animation: slideUp 0.3s ease-out;
+}
+
+.toast {
+    animation: slideInRight 0.3s ease-out;
+}
+
+
+=========================================
+FILE PATH: frontend/css/responsive.css
+=========================================
+
+@media (max-width: 768px) {
+    .layout {
+        flex-direction: column;
+    }
+    .sidebar {
+        width: 100%;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .sidebar-nav {
+        flex-direction: row;
+        overflow-x: auto;
+        padding: 0;
+    }
+    .sidebar-brand {
+        padding: 16px;
+    }
+    .summary-cards {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .summary-cards {
+        grid-template-columns: 1fr;
+    }
+    .filters {
+        flex-direction: column;
+        gap: 8px;
+    }
+}
+
+
+=========================================
+FILE PATH: frontend/css/style.css
+=========================================
+
+:root {
+    --primary: #4F46E5;
+    --primary-hover: #4338CA;
+    --secondary: #64748B;
+    --success: #22C55E;
+    --warning: #F59E0B;
+    --danger: #EF4444;
+    --bg-color: #F8FAFC;
+    --surface: #FFFFFF;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --border-color: #E2E8F0;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+.login-body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+.login-container {
+    width: 100%;
+    max-width: 400px;
+    padding: 20px;
+}
+
+.card, .login-card {
+    background-color: var(--surface);
+    border-radius: 16px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    padding: 24px;
+}
+
+.login-card h2 {
+    margin-bottom: 8px;
+    color: var(--primary);
+    text-align: center;
+}
+
+.login-card p {
+    text-align: center;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.form-group input, .form-group select, .form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    border-color: var(--primary);
+}
+
+.btn-primary, .btn-secondary {
+    display: inline-block;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+    text-align: center;
+    width: 100%;
+}
+
+.btn-primary {
+    background-color: var(--primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+.btn-secondary {
+    background-color: #E2E8F0;
+    color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+    background-color: #CBD5E1;
+}
+
+/* Layout */
+.layout {
+    display: flex;
+    height: 100vh;
+}
+
+.sidebar {
+    width: 250px;
+    background-color: var(--surface);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-brand {
+    padding: 24px;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    padding: 16px 0;
+}
+
+.sidebar-nav a {
+    padding: 12px 24px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-weight: 500;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.sidebar-nav a:hover, .sidebar-nav a.active {
+    background-color: #EEF2FF;
+    color: var(--primary);
+    border-right: 3px solid var(--primary);
+}
+
+.main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+}
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+/* Dashboard */
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.summary-card h3 {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.summary-card .stat {
+    font-size: 32px;
+    font-weight: 700;
+    margin-top: 8px;
+}
+
+.summary-card.success .stat { color: var(--success); }
+.summary-card.warning .stat { color: var(--warning); }
+.summary-card.danger .stat { color: var(--danger); }
+.summary-card.pending .stat { color: var(--secondary); }
+
+/* Task Grid */
+.task-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+}
+
+.task-card {
+    background-color: var(--surface);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+}
+
+.task-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.task-card h4 {
+    margin-bottom: 8px;
+    font-size: 16px;
+}
+
+.task-card p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge.success { background-color: #DCFCE7; color: #166534; }
+.badge.warning { background-color: #FEF3C7; color: #92400E; }
+.badge.danger { background-color: #FEE2E2; color: #991B1B; }
+.badge.pending { background-color: #F1F5F9; color: #334155; }
+
+/* Tables */
+.table-container {
+    overflow-x: auto;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+th, td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+th {
+    background-color: #F8FAFC;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 14px;
+}
+tr:hover {
+    background-color: #F1F5F9;
+}
+
+/* Modals */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(15, 23, 42, 0.5);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 50;
+}
+.modal-overlay.active {
+    display: flex;
+}
+.modal {
+    background-color: var(--surface);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+.modal-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.close-btn {
+    cursor: pointer;
+    font-size: 24px;
+    color: var(--text-secondary);
+}
+.modal-body {
+    padding: 24px;
+}
+
+/* Toast */
+#toast-container {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 100;
+}
+.toast {
+    padding: 12px 24px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+.toast.success { background-color: var(--success); }
+.toast.error { background-color: var(--danger); }
+
+
+=========================================
+FILE PATH: frontend/dashboard.html
+=========================================
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - TMS</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+    <div id="toast-container"></div>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="sidebar-brand">TMS</div>
+            <nav class="sidebar-nav">
+                <a href="dashboard.html" class="active">Dashboard</a>
+                <a href="tasks.html">Tasks</a>
+                <a href="employees.html" id="nav-employees" style="display:none;">Employees</a>
+                <a href="#" id="logout-btn">Logout</a>
+            </nav>
+        </aside>
+        
+        <main class="main-content fade-in">
+            <header class="topbar">
+                <h2>Dashboard Overview</h2>
+                <div class="user-profile">
+                    <span id="current-user-name">Loading...</span>
+                </div>
+            </header>
+            
+            <div class="summary-cards">
+                <div class="card summary-card">
+                    <h3>Total Tasks</h3>
+                    <p class="stat" id="stat-total">0</p>
+                </div>
+                <div class="card summary-card success">
+                    <h3>Completed</h3>
+                    <p class="stat" id="stat-completed">0</p>
+                </div>
+                <div class="card summary-card warning">
+                    <h3>In Progress</h3>
+                    <p class="stat" id="stat-inprogress">0</p>
+                </div>
+                <div class="card summary-card pending">
+                    <h3>Pending</h3>
+                    <p class="stat" id="stat-pending">0</p>
+                </div>
+                <div class="card summary-card danger">
+                    <h3>Overdue</h3>
+                    <p class="stat" id="stat-overdue">0</p>
+                </div>
+            </div>
+            
+            <div class="dashboard-widgets">
+                <div class="card recent-tasks-widget">
+                    <h3>Recent Tasks</h3>
+                    <div id="recent-tasks-list">Loading...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script src="js/api.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
+
+
+=========================================
+FILE PATH: frontend/employees.html
+=========================================
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employees - TMS</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+    <div id="toast-container"></div>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="sidebar-brand">TMS</div>
+            <nav class="sidebar-nav">
+                <a href="dashboard.html">Dashboard</a>
+                <a href="tasks.html">Tasks</a>
+                <a href="employees.html" class="active" id="nav-employees">Employees</a>
+                <a href="#" id="logout-btn">Logout</a>
+            </nav>
+        </aside>
+        
+        <main class="main-content fade-in">
+            <header class="topbar">
+                <h2>Employees</h2>
+                <button class="btn-primary" id="open-employee-modal">+ Add Employee</button>
+            </header>
+            
+            <div class="table-container card">
+                <table id="employee-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Department</th>
+                            <th>Designation</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="employee-list">
+                        <!-- Employee rows -->
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create Employee Modal -->
+    <div class="modal-overlay" id="employee-modal">
+        <div class="modal slide-up">
+            <div class="modal-header">
+                <h3>Add Employee</h3>
+                <span class="close-btn" id="close-employee-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="employee-form">
+                    <div class="form-group">
+                        <label for="emp-name">Full Name</label>
+                        <input type="text" id="emp-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="emp-username">Username</label>
+                        <input type="text" id="emp-username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="emp-email">Email</label>
+                        <input type="email" id="emp-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="emp-password">Password</label>
+                        <input type="password" id="emp-password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="emp-dept">Department</label>
+                        <input type="text" id="emp-dept">
+                    </div>
+                    <div class="form-group">
+                        <label for="emp-desig">Designation</label>
+                        <input type="text" id="emp-desig">
+                    </div>
+                    <button type="submit" class="btn-primary" id="save-employee-btn">Save Employee</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script src="js/api.js"></script>
+    <script src="js/employees.js"></script>
+</body>
+</html>
+
+
+=========================================
+FILE PATH: frontend/index.html
+=========================================
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Management System - Login</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body class="login-body">
+    <div id="toast-container"></div>
+    <div class="login-container fade-in">
+        <div class="login-card">
+            <h2>Welcome Back</h2>
+            <p>Sign in to your account</p>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn-primary" id="login-btn">Sign In</button>
+            </form>
+        </div>
+    </div>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+</body>
+</html>
+
+
+=========================================
+FILE PATH: frontend/js/api.js
+=========================================
+
+const BASE_URL = 'http://localhost:8000/api/v1';
+
+const api = {
+    request: async (endpoint, options = {}) => {
+        const token = localStorage.getItem('token');
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers
+        };
+
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        try {
+            const response = await fetch(`${BASE_URL}${endpoint}`, {
+                ...options,
+                headers
+            });
+
+            if (response.status === 401 && window.location.pathname !== '/index.html' && window.location.pathname !== '/') {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = 'index.html';
+                return null;
+            }
+
+            if (response.status === 204) {
+                return true;
+            }
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || 'Something went wrong');
+            }
+
+            return data;
+        } catch (error) {
+            ui.showToast(error.message, 'error');
+            throw error;
+        }
+    },
+
+    get: (endpoint) => api.request(endpoint),
+    post: (endpoint, body) => api.request(endpoint, { method: 'POST', body: JSON.stringify(body) }),
+    put: (endpoint, body) => api.request(endpoint, { method: 'PUT', body: JSON.stringify(body) }),
+    patch: (endpoint, body) => api.request(endpoint, { method: 'PATCH', body: JSON.stringify(body) }),
+    delete: (endpoint) => api.request(endpoint, { method: 'DELETE' })
+};
+
+const ui = {
+    showToast: (message, type = 'success') => {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    },
+    
+    checkAuth: () => {
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        
+        if (!token && window.location.pathname !== '/index.html' && window.location.pathname !== '/') {
+            window.location.href = 'index.html';
+        }
+
+        if (user.role === 'admin' || user.role === 'manager') {
+            const empNav = document.getElementById('nav-employees');
+            if (empNav) empNav.style.display = 'block';
+            
+            const btnNewTask = document.getElementById('open-task-modal');
+            if(btnNewTask) btnNewTask.style.display = 'block';
+        }
+
+        const nameEl = document.getElementById('current-user-name');
+        if (nameEl && user.username) {
+            nameEl.textContent = `${user.username} (${user.role})`;
+        }
+    },
+
+    logout: () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = 'index.html';
+    }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            ui.logout();
+        });
+    }
+});
+
+
+=========================================
+FILE PATH: frontend/js/auth.js
+=========================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    // If already logged in, redirect to dashboard
+    if (localStorage.getItem('token')) {
+        window.location.href = 'dashboard.html';
+    }
+
+    const loginForm = document.getElementById('login-form');
+    
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const btn = document.getElementById('login-btn');
+            
+            try {
+                btn.textContent = 'Signing In...';
+                btn.disabled = true;
+                
+                const data = await api.post('/auth/login', { username, password });
+                
+                localStorage.setItem('token', data.access_token);
+                localStorage.setItem('user', JSON.stringify({
+                    user_id: data.user_id,
+                    role: data.role,
+                    username: username
+                }));
+                
+                ui.showToast('Login successful!');
+                
+                setTimeout(() => {
+                    window.location.href = 'dashboard.html';
+                }, 500);
+            } catch (error) {
+                // error handled by api request catch block
+            } finally {
+                btn.textContent = 'Sign In';
+                btn.disabled = false;
+            }
+        });
+    }
+});
+
+
+=========================================
+FILE PATH: frontend/js/dashboard.js
+=========================================
+
+document.addEventListener('DOMContentLoaded', async () => {
+    ui.checkAuth();
+
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    if (user.role === 'admin' || user.role === 'manager') {
+        try {
+            const summary = await api.get('/dashboard/summary');
+            document.getElementById('stat-total').textContent = summary.total_tasks;
+            document.getElementById('stat-completed').textContent = summary.completed;
+            document.getElementById('stat-inprogress').textContent = summary.in_progress;
+            document.getElementById('stat-pending').textContent = summary.pending;
+            document.getElementById('stat-overdue').textContent = summary.overdue;
+        } catch (error) {
+            console.error('Failed to fetch dashboard summary', error);
+        }
+    } else {
+        // Employees don't have access to global summary
+        document.querySelector('.summary-cards').style.display = 'none';
+    }
+
+    // Fetch recent tasks
+    try {
+        const tasks = await api.get('/tasks?limit=5');
+        const taskList = document.getElementById('recent-tasks-list');
+        taskList.innerHTML = '';
+        
+        if (tasks.length === 0) {
+            taskList.innerHTML = '<p>No recent tasks found.</p>';
+            return;
+        }
+        
+        tasks.forEach(task => {
+            const div = document.createElement('div');
+            div.style.padding = '12px';
+            div.style.borderBottom = '1px solid var(--border-color)';
+            
+            const badgeClass = {
+                'Pending': 'pending',
+                'In Progress': 'warning',
+                'Completed': 'success',
+                'Overdue': 'danger'
+            }[task.status] || 'pending';
+
+            div.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong>${task.title}</strong>
+                    <span class="badge ${badgeClass}">${task.status}</span>
+                </div>
+                <small style="color:var(--text-secondary)">Due: ${task.due_date || 'N/A'} - Priority: ${task.priority}</small>
+            `;
+            taskList.appendChild(div);
+        });
+    } catch (error) {
+        console.error('Failed to load recent tasks', error);
+    }
+});
+
+
+=========================================
+FILE PATH: frontend/js/employees.js
+=========================================
+
+document.addEventListener('DOMContentLoaded', async () => {
+    ui.checkAuth();
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    
+    if (user.role !== 'admin' && user.role !== 'manager') {
+        window.location.href = 'dashboard.html';
+        return;
+    }
+
+    const modal = document.getElementById('employee-modal');
+    const openBtn = document.getElementById('open-employee-modal');
+    const closeBtn = document.getElementById('close-employee-modal');
+    const form = document.getElementById('employee-form');
+    const tbody = document.getElementById('employee-list');
+
+    if (user.role !== 'admin') {
+        openBtn.style.display = 'none'; // Only admin can add
+    }
+
+    // Modal behavior
+    openBtn.addEventListener('click', () => { modal.classList.add('active'); });
+    closeBtn.addEventListener('click', () => { modal.classList.remove('active'); form.reset(); });
+
+    // Load employees
+    async function loadEmployees() {
+        try {
+            const employees = await api.get('/employees');
+            tbody.innerHTML = '';
+            employees.forEach(emp => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${emp.employee_id}</td>
+                    <td>${emp.full_name}</td>
+                    <td>${emp.department || '-'}</td>
+                    <td>${emp.designation || '-'}</td>
+                    <td><span class="badge ${emp.is_active ? 'success' : 'danger'}">${emp.is_active ? 'Active' : 'Inactive'}</span></td>
+                    <td>
+                        ${user.role === 'admin' && emp.is_active ? `<button class="btn-secondary deactivate-btn" data-id="${emp.employee_id}" style="padding: 4px 8px; font-size:12px;">Deactivate</button>` : '-'}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Bind deactivate events
+            document.querySelectorAll('.deactivate-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    if (confirm('Are you sure you want to deactivate this employee?')) {
+                        const id = e.target.getAttribute('data-id');
+                        try {
+                            await api.delete(`/employees/${id}`);
+                            ui.showToast('Employee deactivated');
+                            loadEmployees();
+                        } catch(err) {}
+                    }
+                });
+            });
+        } catch (error) {}
+    }
+
+    // Save employee
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const empData = {
+            full_name: document.getElementById('emp-name').value,
+            username: document.getElementById('emp-username').value,
+            email: document.getElementById('emp-email').value,
+            password: document.getElementById('emp-password').value,
+            department: document.getElementById('emp-dept').value || null,
+            designation: document.getElementById('emp-desig').value || null
+        };
+        try {
+            await api.post('/employees', empData);
+            ui.showToast('Employee created successfully');
+            modal.classList.remove('active');
+            form.reset();
+            loadEmployees();
+        } catch (err) {}
+    });
+
+    loadEmployees();
+});
+
+
+=========================================
+FILE PATH: frontend/js/tasks.js
+=========================================
+
+document.addEventListener('DOMContentLoaded', async () => {
+    ui.checkAuth();
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    
+    const taskGrid = document.getElementById('task-list');
+    const modal = document.getElementById('task-modal');
+    const openBtn = document.getElementById('open-task-modal');
+    const closeBtn = document.getElementById('close-task-modal');
+    const form = document.getElementById('task-form');
+    const filterBtn = document.getElementById('apply-filters');
+    const filterAssignee = document.getElementById('filter-assignee');
+    const filterStatus = document.getElementById('filter-status');
+    const assigneeSelect = document.getElementById('task-assignee');
+
+    let employeesMap = {}; // id -> name
+
+    // Load setup data if admin/manager
+    if (user.role === 'admin' || user.role === 'manager') {
+        openBtn.style.display = 'block';
+        filterAssignee.style.display = 'inline-block';
+        
+        // Fetch employees for dropdowns
+        try {
+            const employees = await api.get('/employees');
+            employees.forEach(emp => {
+                employeesMap[emp.employee_id] = emp.full_name;
+                
+                const optFilter = document.createElement('option');
+                optFilter.value = emp.employee_id;
+                optFilter.textContent = emp.full_name;
+                filterAssignee.appendChild(optFilter);
+
+                const optForm = document.createElement('option');
+                optForm.value = emp.employee_id;
+                optForm.textContent = emp.full_name;
+                assigneeSelect.appendChild(optForm);
+            });
+        } catch(err){}
+    }
+
+    // Modal
+    if(openBtn) openBtn.addEventListener('click', () => { modal.classList.add('active'); });
+    if(closeBtn) closeBtn.addEventListener('click', () => { modal.classList.remove('active'); form.reset(); });
+
+    // Load tasks
+    async function loadTasks() {
+        try {
+            let url = '/tasks?limit=100';
+            const status = filterStatus.value;
+            const assignee = filterAssignee.value;
+            
+            if (status) url += `&status=${status}`;
+            if (assignee && user.role !== 'employee') url += `&assigned_to=${assignee}`;
+
+            const tasks = await api.get(url);
+            taskGrid.innerHTML = '';
+            
+            if (tasks.length === 0) {
+                taskGrid.innerHTML = '<p>No tasks found.</p>';
+                return;
+            }
+
+            tasks.forEach(task => {
+                const card = document.createElement('div');
+                card.className = 'task-card';
+                
+                const badgeClass = {
+                    'Pending': 'pending',
+                    'In Progress': 'warning',
+                    'Completed': 'success',
+                    'Overdue': 'danger'
+                }[task.status] || 'pending';
+
+                const assigneeName = employeesMap[task.assigned_to] || `ID: ${task.assigned_to}`;
+
+                let statusActions = '';
+                if (user.role === 'employee' || user.role === 'admin' || user.role === 'manager') {
+                    // Everyone can update status
+                    statusActions = `
+                        <div style="margin-top:12px; display:flex; gap:8px;">
+                            <select class="status-update-select" data-id="${task.task_id}" style="padding:4px; font-size:12px;">
+                                <option value="Pending" ${task.status==='Pending'?'selected':''}>Pending</option>
+                                <option value="In Progress" ${task.status==='In Progress'?'selected':''}>In Progress</option>
+                                <option value="Completed" ${task.status==='Completed'?'selected':''}>Completed</option>
+                            </select>
+                            <button class="btn-secondary update-status-btn" data-id="${task.task_id}" style="padding:4px 8px; font-size:12px; width:auto;">Update</button>
+                        </div>
+                    `;
+                }
+
+                card.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
+                        <span class="badge ${badgeClass}">${task.status}</span>
+                        <span style="font-size:12px; font-weight:600; color:var(--text-secondary)">Priority: ${task.priority}</span>
+                    </div>
+                    <h4>${task.title}</h4>
+                    <p>${task.description || 'No description'}</p>
+                    <div style="font-size:12px; color:var(--text-secondary);">
+                        <div>Assigned to: ${assigneeName}</div>
+                        <div>Due: ${task.due_date || 'N/A'}</div>
+                    </div>
+                    ${statusActions}
+                `;
+                taskGrid.appendChild(card);
+            });
+
+            // Bind status update events
+            document.querySelectorAll('.update-status-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const id = e.target.getAttribute('data-id');
+                    const select = document.querySelector(`.status-update-select[data-id="${id}"]`);
+                    const newStatus = select.value;
+                    const isCompleted = newStatus === 'Completed';
+
+                    try {
+                        await api.patch(`/tasks/${id}/status`, { status: newStatus, completed: isCompleted });
+                        ui.showToast('Status updated');
+                        loadTasks();
+                    } catch(err) {}
+                });
+            });
+
+        } catch (error) {}
+    }
+
+    // Form submit
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = {
+                title: document.getElementById('task-title').value,
+                description: document.getElementById('task-desc').value || null,
+                assigned_to: parseInt(document.getElementById('task-assignee').value),
+                priority: document.getElementById('task-priority').value,
+                due_date: document.getElementById('task-due').value || null
+            };
+            try {
+                await api.post('/tasks', data);
+                ui.showToast('Task created successfully');
+                modal.classList.remove('active');
+                form.reset();
+                loadTasks();
+            } catch(err) {}
+        });
+    }
+
+    if(filterBtn) {
+        filterBtn.addEventListener('click', loadTasks);
+    }
+
+    // Initial load
+    loadTasks();
+});
+
+
+=========================================
+FILE PATH: frontend/tasks.html
+=========================================
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tasks - TMS</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+    <div id="toast-container"></div>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="sidebar-brand">TMS</div>
+            <nav class="sidebar-nav">
+                <a href="dashboard.html">Dashboard</a>
+                <a href="tasks.html" class="active">Tasks</a>
+                <a href="employees.html" id="nav-employees" style="display:none;">Employees</a>
+                <a href="#" id="logout-btn">Logout</a>
+            </nav>
+        </aside>
+        
+        <main class="main-content fade-in">
+            <header class="topbar">
+                <h2>Task Board</h2>
+                <button class="btn-primary" id="open-task-modal" style="display:none;">+ New Task</button>
+            </header>
+            
+            <div class="filters">
+                <select id="filter-status">
+                    <option value="">All Statuses</option>
+                    <option value="Pending">Pending</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Overdue">Overdue</option>
+                </select>
+                <select id="filter-assignee" style="display:none;">
+                    <option value="">All Employees</option>
+                </select>
+                <button class="btn-secondary" id="apply-filters">Filter</button>
+            </div>
+            
+            <div class="task-grid" id="task-list">
+                <!-- Task cards will be injected here -->
+                <p>Loading tasks...</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create Task Modal -->
+    <div class="modal-overlay" id="task-modal">
+        <div class="modal slide-up">
+            <div class="modal-header">
+                <h3 id="modal-title">Create Task</h3>
+                <span class="close-btn" id="close-task-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="task-form">
+                    <div class="form-group">
+                        <label for="task-title">Title</label>
+                        <input type="text" id="task-title" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="task-desc">Description</label>
+                        <textarea id="task-desc"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="task-assignee">Assign To</label>
+                        <select id="task-assignee" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="task-priority">Priority</label>
+                        <select id="task-priority">
+                            <option value="Low">Low</option>
+                            <option value="Medium" selected>Medium</option>
+                            <option value="High">High</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="task-due">Due Date</label>
+                        <input type="date" id="task-due">
+                    </div>
+                    <button type="submit" class="btn-primary" id="save-task-btn">Save Task</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script src="js/api.js"></script>
+    <script src="js/tasks.js"></script>
+</body>
+</html>
+
+
+=========================================
+FILE PATH: project_source_export.txt
+=========================================
+
+
+
+=========================================
+PROJECT STRUCTURE
+=========================================
+
+README.md
+├── .env
+├── Dockerfile
+├── alembic.ini
+│   ├── env.py
+│   ├── config.py
+│   │   ├── __init__.py
+│   │   ├── dependencies.py
+│   │   ├── exceptions.py
+│   │   ├── security.py
+│   ├── database.py
+│   ├── main.py
+│   │   ├── __init__.py
+│   │   ├── employee.py
+│   │   ├── task.py
+│   │   ├── user.py
+│   │   ├── __init__.py
+│   │   ├── employee_repo.py
+│   │   ├── task_repo.py
+│   │   ├── user_repo.py
+│   │   ├── __init__.py
+│   │   ├── auth_router.py
+│   │   ├── dashboard_router.py
+│   │   ├── employee_router.py
+│   │   ├── task_router.py
+│   │   ├── __init__.py
+│   │   ├── employee_schema.py
+│   │   ├── task_schema.py
+│   │   ├── user_schema.py
+│   │   ├── __init__.py
+│   │   ├── auth_service.py
+│   │   ├── employee_service.py
+│   │   ├── task_service.py
+│   │   ├── __init__.py
+│   │   ├── logger.py
+├── requirements.txt
+docker-compose.yml
+│   ├── animations.css
+│   ├── responsive.css
+│   ├── style.css
+├── dashboard.html
+├── employees.html
+├── index.html
+│   ├── api.js
+│   ├── auth.js
+│   ├── dashboard.js
+│   ├── employees.js
+│   ├── tasks.js
+├── tasks.html

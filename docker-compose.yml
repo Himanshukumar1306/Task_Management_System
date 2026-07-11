@@ -1,0 +1,51 @@
+
+version: '4.81'
+
+services:
+  backend:
+    build: ./backend
+    container_name: tms_backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=mysql+pymysql://tms_user:tms_password@mysql:3306/tms_db
+    restart: always
+
+  mysql:
+    image: mysql:8.0
+    container_name: tms_mysql
+    environment:
+      MYSQL_DATABASE: tms_db
+      MYSQL_USER: tms_user
+      MYSQL_PASSWORD: tms_password
+      MYSQL_ROOT_PASSWORD: tms_root_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  frontend:
+    image: nginx:alpine
+    container_name: tms_frontend
+    ports:
+      - "8080:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+    restart: always
+
+volumes:
+  mysql_data:
+

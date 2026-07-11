@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Taskify - Next-generation task management system for high-performing teams. Streamline workflows, track analytics, and manage roles.">
+    <title>Taskify - Premium Task Management System</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <style>
+        /* Specific Styles for SaaS Product Landing Page */
+        .landing-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 24px 80px;
+            background: rgba(6, 8, 20, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--surface-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .landing-logo {
+            font-family: var(--font-heading);
+            font-size: 24px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #ffffff, var(--primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .landing-logo::before {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background: var(--primary);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--primary);
+        }
+        .landing-nav {
+            display: flex;
+            gap: 32px;
+            align-items: center;
+        }
+        .landing-nav a {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 15px;
+            transition: color 0.2s;
+        }
+        .landing-nav a:hover {
+            color: var(--text-primary);
+        }
+        .landing-section {
+            padding: 100px 80px;
+            max-width: 1200px;
+            margin: 0 auto;
+            position: relative;
+        }
+        .hero-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            align-items: center;
+            min-height: calc(85vh - 80px);
+        }
+        .hero-text h1 {
+            font-size: 56px;
+            line-height: 1.15;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, #ffffff 40%, var(--primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hero-text p {
+            font-size: 18px;
+            color: var(--text-secondary);
+            margin-bottom: 40px;
+            line-height: 1.6;
+        }
+        .hero-cta {
+            display: flex;
+            gap: 16px;
+        }
+        .hero-mockup {
+            position: relative;
+        }
+        
+        /* Interactive Mockup Dashboard */
+        .mockup-window {
+            background: rgba(13, 17, 39, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            box-shadow: 0 24px 50px rgba(0, 0, 0, 0.5), var(--shadow-glow);
+            overflow: hidden;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .mockup-header {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--surface-border);
+        }
+        .mockup-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .mockup-dot.red { background: #ef4444; }
+        .mockup-dot.yellow { background: #f59e0b; }
+        .mockup-dot.green { background: #10b981; }
+        .mockup-body {
+            padding: 20px;
+        }
+        
+        /* Live Demo Interactive Card inside Mockup */
+        .demo-task-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--surface-border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .demo-task-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--primary);
+            transform: translateX(4px);
+        }
+        .demo-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .demo-stat-box {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--surface-border);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .demo-stat-num {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        .demo-stat-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        /* Features Section */
+        .section-tag {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--primary);
+            font-weight: 700;
+            margin-bottom: 12px;
+            display: block;
+            text-align: center;
+        }
+        .section-title {
+            font-size: 40px;
+            text-align: center;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #ffffff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .section-subtitle {
+            font-size: 16px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 60px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+        }
+        .feature-card {
+            text-align: left;
+            transition: all 0.3s ease;
+        }
+        .feature-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(99, 102, 241, 0.2);
+        }
+        .feature-card h3 {
+            font-size: 20px;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* API Explorer Section */
+        .api-explorer {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 40px;
+            background: rgba(13, 17, 39, 0.4);
+            border: 1px solid var(--surface-border);
+            border-radius: 24px;
+            padding: 40px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .api-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .api-btn {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--surface-border);
+            padding: 16px 20px;
+            border-radius: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            font-size: 14px;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .api-btn:hover, .api-btn.active {
+            background: rgba(99, 102, 241, 0.08);
+            border-color: var(--primary);
+            color: var(--text-primary);
+        }
+        .api-badge {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+        }
+        .api-badge.get { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+        .api-badge.post { background: rgba(99, 102, 241, 0.15); color: var(--primary); }
+        .api-badge.delete { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+        
+        .api-viewer {
+            background: rgba(6, 8, 20, 0.8);
+            border: 1px solid var(--surface-border);
+            border-radius: 16px;
+            padding: 24px;
+            font-family: monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            position: relative;
+        }
+        .api-viewer pre {
+            color: #a7f3d0;
+        }
+        .api-url-bar {
+            background: rgba(255,255,255,0.05);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            border: 1px solid var(--surface-border);
+        }
+
+        /* Pricing Section */
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+        }
+        .pricing-card {
+            border: 1px solid var(--surface-border);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .pricing-card.premium {
+            border-color: var(--primary);
+            background: linear-gradient(180deg, rgba(99, 102, 241, 0.08), rgba(13, 17, 39, 0.7));
+            box-shadow: var(--shadow-glow);
+        }
+        .pricing-card.premium::after {
+            content: 'Most Popular';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary);
+            color: white;
+            padding: 2px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .pricing-card:hover {
+            transform: translateY(-6px);
+        }
+        .pricing-price {
+            font-size: 44px;
+            font-family: var(--font-heading);
+            font-weight: 800;
+            margin: 24px 0;
+            color: var(--text-primary);
+        }
+        .pricing-price span {
+            font-size: 16px;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+        .pricing-features {
+            list-style: none;
+            margin: 32px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        .pricing-features li::before {
+            content: '✓';
+            color: var(--success);
+            margin-right: 12px;
+            font-weight: 700;
+        }
+
+        /* Footer */
+        .landing-footer {
+            border-top: 1px solid var(--surface-border);
+            padding: 60px 80px;
+            background: rgba(6, 8, 20, 0.9);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+        .footer-logo {
+            font-family: var(--font-heading);
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+        }
+
+        /* Responsive Landing overrides */
+        @media (max-width: 1024px) {
+            .landing-header { padding: 20px 40px; }
+            .landing-section { padding: 80px 40px; }
+            .hero-container { grid-template-columns: 1fr; gap: 40px; text-align: center; }
+            .hero-text h1 { font-size: 44px; }
+            .hero-cta { justify-content: center; }
+            .features-grid { grid-template-columns: 1fr 1fr; }
+            .pricing-grid { grid-template-columns: 1fr 1fr; }
+            .api-explorer { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 768px) {
+            .landing-header { padding: 16px 20px; flex-direction: column; gap: 16px; }
+            .landing-nav { gap: 16px; }
+            .landing-section { padding: 60px 20px; }
+            .features-grid { grid-template-columns: 1fr; }
+            .pricing-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Ambient glows -->
+    <div class="ambient-glow-circle float-animation" style="top: 10%; left: 10%; width: 500px; height: 500px; background: var(--primary);"></div>
+    <div class="ambient-glow-circle" style="top: 40%; right: 5%; width: 450px; height: 450px; background: var(--accent-purple);"></div>
+    <div class="ambient-glow-circle" style="bottom: 10%; left: 20%; width: 600px; height: 600px; background: var(--accent-pink);"></div>
+
+    <!-- Header -->
+    <header class="landing-header">
+        <div class="landing-logo">Taskify</div>
+        <nav class="landing-nav">
+            <a href="#features">Features</a>
+            <a href="#demo">Live Demo</a>
+            <a href="#api">API</a>
+            <a href="#pricing">Pricing</a>
+            <a href="login.html" class="btn-secondary" id="btn-login-nav" style="padding: 8px 16px;">Sign In</a>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Hero Section -->
+        <section class="landing-section hero-container">
+            <div class="hero-text fade-in">
+                <h1>Next-Gen Task Management for Fast Teams.</h1>
+                <p>Supercharge your workflow. Assign tasks, track progress, manage employees, and monitor team analytics in a unified, glassmorphic space.</p>
+                <div class="hero-cta">
+                    <a href="login.html" class="btn-primary" id="hero-get-started">Launch Dashboard</a>
+                    <a href="#api" class="btn-secondary" id="hero-explore-api">Explore API docs</a>
+                </div>
+            </div>
+            
+            <div class="hero-mockup slide-up">
+                <!-- Mockup Dashboard -->
+                <div class="mockup-window">
+                    <div class="mockup-header">
+                        <span class="mockup-dot red"></span>
+                        <span class="mockup-dot yellow"></span>
+                        <span class="mockup-dot green"></span>
+                        <span style="font-size: 11px; color: var(--text-muted); margin-left: 8px; font-family: monospace;">app.taskify.io/dashboard</span>
+                    </div>
+                    <div class="mockup-body">
+                        <!-- Stats Mockup -->
+                        <div class="demo-stats">
+                            <div class="demo-stat-box">
+                                <div class="demo-stat-num" id="demo-total-tasks">14</div>
+                                <div class="demo-stat-label">Total Tasks</div>
+                            </div>
+                            <div class="demo-stat-box">
+                                <div class="demo-stat-num" id="demo-completed-tasks" style="color: var(--success);">8</div>
+                                <div class="demo-stat-label">Completed</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Mini Interactive list -->
+                        <h4 style="font-size: 12px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; letter-spacing: 0.05em;">Interactive Preview (Click to complete)</h4>
+                        <div id="demo-tasks-list">
+                            <div class="demo-task-card" onclick="completeDemoTask(this, 1)">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                    <strong style="font-size:13px; color: var(--text-primary);">Deploy backend API container</strong>
+                                    <span class="badge warning" style="font-size:9px; padding: 2px 6px;">In Progress</span>
+                                </div>
+                                <small style="font-size:11px; color: var(--text-secondary);">Assignee: Snehal Wani • Due today</small>
+                            </div>
+                            <div class="demo-task-card" onclick="completeDemoTask(this, 2)">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                    <strong style="font-size:13px; color: var(--text-primary);">Design login glassmorphism layout</strong>
+                                    <span class="badge pending" style="font-size:9px; padding: 2px 6px;">Pending</span>
+                                </div>
+                                <small style="font-size:11px; color: var(--text-secondary);">Assignee: Aman Gupta • Due tomorrow</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="landing-section" id="features">
+            <span class="section-tag">Powerful capabilities</span>
+            <h2 class="section-title">Built for Modern Productivity</h2>
+            <p class="section-subtitle">A robust project architecture utilizing Nginx, FastAPI, SQLAlchemy, and Docker to deliver absolute performance and reliability.</p>
+            
+            <div class="features-grid">
+                <div class="card feature-card">
+                    <div class="feature-icon">📁</div>
+                    <h3>Task Board & Flows</h3>
+                    <p>Create, update, and filter tasks instantly. Track priority levels and due dates on a responsive task board designed for clear visibility.</p>
+                </div>
+                <div class="card feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Role-Based Access</h3>
+                    <p>Designed with secure token-based logins. Provide custom dashboards for Administrators, Managers, and Employees to keep project information safe.</p>
+                </div>
+                <div class="card feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Live Analytics</h3>
+                    <p>Track metrics instantly. Get bird's-eye updates on completed, overdue, and pending tasks so your project timeline stays on schedule.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Interactive Demo Section -->
+        <section class="landing-section" id="demo" style="text-align: center;">
+            <span class="section-tag">Take Control</span>
+            <h2 class="section-title">Try it out in seconds</h2>
+            <p class="section-subtitle" style="margin-bottom: 40px;">Launch the full-featured dashboard to create custom task structures and manage employee directory lists.</p>
+            <div style="display:inline-flex; gap:16px;">
+                <a href="login.html" class="btn-primary" id="demo-launch-btn">Launch Application</a>
+                <a href="#features" class="btn-secondary">Learn More</a>
+            </div>
+        </section>
+
+        <!-- API Explorer Section -->
+        <section class="landing-section" id="api">
+            <span class="section-tag">Developer Friendly</span>
+            <h2 class="section-title">Fully Documented OpenAPI Rest API</h2>
+            <p class="section-subtitle">Integrate your developer tools with our clean JSON endpoints powered by FastAPI and auto-documented schemas.</p>
+            
+            <div class="api-explorer">
+                <div class="api-menu">
+                    <button class="api-btn active" onclick="showApi('auth')" id="api-btn-auth">
+                        <span>POST /api/v1/auth/login</span>
+                        <span class="api-badge post">POST</span>
+                    </button>
+                    <button class="api-btn" onclick="showApi('summary')" id="api-btn-summary">
+                        <span>GET /api/v1/dashboard/summary</span>
+                        <span class="api-badge get">GET</span>
+                    </button>
+                    <button class="api-btn" onclick="showApi('tasks')" id="api-btn-tasks">
+                        <span>GET /api/v1/tasks</span>
+                        <span class="api-badge get">GET</span>
+                    </button>
+                    <button class="api-btn" onclick="showApi('delete')" id="api-btn-delete">
+                        <span>DELETE /api/v1/tasks/{task_id}</span>
+                        <span class="api-badge delete">DEL</span>
+                    </button>
+                </div>
+                
+                <div>
+                    <div class="api-url-bar" id="api-url">http://localhost:8000/api/v1/auth/login</div>
+                    <div class="api-viewer">
+                        <pre id="api-response-content">{
+  "access_token": "918f8e02587f7b2a6f2c...",
+  "token_type": "bearer",
+  "role": "admin",
+  "user_id": 1
+}</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pricing Section -->
+        <section class="landing-section" id="pricing">
+            <span class="section-tag">Simple Pricing</span>
+            <h2 class="section-title">Flexible Plans for Every Team</h2>
+            <p class="section-subtitle">Start organizing tasks for free, and scale features as your organization grows.</p>
+            
+            <div class="pricing-grid">
+                <!-- Free Plan -->
+                <div class="card pricing-card">
+                    <h3>Starter</h3>
+                    <div class="pricing-price">$0 <span>/ mo</span></div>
+                    <p style="font-size:14px; color:var(--text-secondary);">Great for individual workers and small startups.</p>
+                    <ul class="pricing-features">
+                        <li>Up to 5 active tasks</li>
+                        <li>1 manager account</li>
+                        <li>Basic task list view</li>
+                        <li>No API access</li>
+                    </ul>
+                    <a href="login.html" class="btn-secondary" style="width: 100%;">Get Started</a>
+                </div>
+                
+                <!-- Pro Plan -->
+                <div class="card pricing-card premium">
+                    <h3>Pro</h3>
+                    <div class="pricing-price">$12 <span>/ user / mo</span></div>
+                    <p style="font-size:14px; color:var(--text-secondary);">Perfect for fast-growing companies and teams.</p>
+                    <ul class="pricing-features">
+                        <li>Unlimited active tasks</li>
+                        <li>Multiple Manager & Admin roles</li>
+                        <li>Employee Directory list</li>
+                        <li>Full OpenAPI REST API access</li>
+                        <li>Priority email support</li>
+                    </ul>
+                    <a href="login.html" class="btn-primary" style="width: 100%;">Go Pro</a>
+                </div>
+                
+                <!-- Enterprise Plan -->
+                <div class="card pricing-card">
+                    <h3>Enterprise</h3>
+                    <div class="pricing-price">Custom</div>
+                    <p style="font-size:14px; color:var(--text-secondary);">Built for large-scale operations requiring absolute control.</p>
+                    <ul class="pricing-features">
+                        <li>Dedicated private server instance</li>
+                        <li>SSO & SAML Authentication</li>
+                        <li>99.9% uptime SLA guarantee</li>
+                        <li>Dedicated support engineer</li>
+                    </ul>
+                    <a href="mailto:support@taskify.io" class="btn-secondary" style="width: 100%;">Contact Sales</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="landing-footer">
+        <div class="footer-logo">Taskify</div>
+        <p style="margin-bottom: 24px;">MpOnline Internship Project • Reconstructed with high-fidelity styles</p>
+        <p style="font-size:12px;">&copy; 2026 Taskify Inc. All rights reserved.</p>
+    </footer>
+
+    <script>
+        // Interactive live mockup task list
+        let totalTasks = 14;
+        let completedTasks = 8;
+        
+        function completeDemoTask(element, id) {
+            // Find badge inside card
+            const badge = element.querySelector('.badge');
+            if (badge.classList.contains('success')) return; // Already completed
+            
+            badge.className = 'badge success';
+            badge.textContent = 'Completed';
+            
+            completedTasks += 1;
+            document.getElementById('demo-completed-tasks').textContent = completedTasks;
+            element.style.opacity = '0.7';
+            element.style.borderColor = 'rgba(16, 185, 129, 0.2)';
+            
+            // Add a brief toast representation
+            const container = document.getElementById('toast-container');
+            if (container) {
+                const toast = document.createElement('div');
+                toast.className = 'toast success';
+                toast.textContent = `Demo: Task #${id} marked as completed!`;
+                container.appendChild(toast);
+                setTimeout(() => {
+                    toast.style.opacity = '0';
+                    setTimeout(() => toast.remove(), 300);
+                }, 2500);
+            }
+        }
+        
+        // API Explorer code mocks
+        const apiData = {
+            auth: {
+                url: 'http://localhost:8000/api/v1/auth/login',
+                response: `{
+  "access_token": "918f8e02587f7b2a6f2c...",
+  "token_type": "bearer",
+  "role": "admin",
+  "user_id": 1
+}`
+            },
+            summary: {
+                url: 'http://localhost:8000/api/v1/dashboard/summary',
+                response: `{
+  "total_tasks": 14,
+  "completed": 8,
+  "pending": 3,
+  "in_progress": 2,
+  "overdue": 1
+}`
+            },
+            tasks: {
+                url: 'http://localhost:8000/api/v1/tasks?limit=10',
+                response: `[
+  {
+    "task_id": 1,
+    "title": "Deploy backend API container",
+    "description": "Containerize with docker-compose",
+    "assigned_to": 3,
+    "priority": "High",
+    "due_date": "2026-07-11",
+    "status": "In Progress"
+  },
+  {
+    "task_id": 2,
+    "title": "Design login layout",
+    "description": "Premium glassmorphic styling",
+    "assigned_to": 4,
+    "priority": "Medium",
+    "due_date": "2026-07-12",
+    "status": "Pending"
+  }
+]`
+            },
+            delete: {
+                url: 'http://localhost:8000/api/v1/tasks/1',
+                response: `{
+  "detail": "Task deleted successfully"
+}`
+            }
+        };
+        
+        function showApi(type) {
+            // Deactivate all buttons
+            document.querySelectorAll('.api-btn').forEach(btn => btn.classList.remove('active'));
+            // Activate clicked button
+            document.getElementById(`api-btn-${type}`).classList.add('active');
+            
+            // Set URL and content
+            document.getElementById('api-url').textContent = apiData[type].url;
+            document.getElementById('api-response-content').textContent = apiData[type].response;
+        }
+    </script>
+</body>
+</html>
