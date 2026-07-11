@@ -1,5 +1,8 @@
 # Taskify - Premium Task Management System
 
+Name - Himanshu Kumar
+Reg. no . - 23BCE11375
+
 Taskify is a modern, responsive **Task Management System (TMS)** built with a high-fidelity glassmorphic user interface. It provides project leads, managers, and developers a unified interface to create task lists, monitor status progress, manage roles, and review directory statistics.
 
 This repository was developed as part of the **MpOnline Internship** project, reconstructed and modernized with a premium SaaS product design system.
@@ -25,60 +28,4 @@ This repository was developed as part of the **MpOnline Internship** project, re
 * **Database**: SQLite (default local) / MySQL 8.0 (production/Docker).
 * **Hosting / Containers**: Docker, Docker-Compose, Nginx, Render.
 
----
 
-## 💻 Running the Project Locally
-
-### 1. Quick-Start (Automatic Windows Script)
-The simplest way to start both the backend API and frontend website is using the unified Python wrapper:
-1. Double-click the `run_local.bat` file in the root directory.
-2. It will automatically start:
-   * **FastAPI Backend**: `http://localhost:8000`
-   * **Frontend Server**: `http://localhost:8080`
-3. A web browser window will automatically open to: [http://localhost:8080/index.html](http://localhost:8080/index.html)
-
-### 2. Manual Startup Commands
-If you prefer running the commands manually:
-* **Install dependencies & seed database**:
-  ```powershell
-  cd backend
-  pip install -r requirements.txt
-  python seed.py
-  ```
-* **Run Backend Server**:
-  ```powershell
-  python -m uvicorn app.main:app --port 8000 --reload
-  ```
-* **Run Frontend HTTP Server**:
-  ```powershell
-  cd frontend
-  python -m http.server 8080
-  ```
-
----
-
-## 🔐 Seed User Accounts
-The database seeder (`seed.py`) creates the following test credentials:
-
-| Role | Username | Password | Email |
-| :--- | :--- | :--- | :--- |
-| **Administrator** | `admin` | `admin123` | `admin@taskify.io` |
-| **Manager** | `manager` | `manager123` | `manager@taskify.io` |
-| **Employee (Intern)** | `snehal` | `snehal123` | `snehal@taskify.io` |
-| **Employee (Frontend)** | `aman` | `aman123` | `aman@taskify.io` |
-
----
-
-## ☁️ Deployment on Render
-
-This project is configured for direct deployment on **Render**:
-1. **Backend Web Service**:
-   * Language: `Python`
-   * Root Directory: `backend`
-   * Build Command: `pip install -r requirements.txt && python seed.py`
-   * Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-2. **Link URL**: Update `RENDER_BACKEND_URL` in `frontend/js/api.js` to your deployed Render URL.
-3. **Frontend Static Site**:
-   * Root Directory: (Leave blank)
-   * Build Command: (Leave blank)
-   * Publish Directory: `frontend`
